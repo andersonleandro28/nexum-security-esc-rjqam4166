@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-29T02:28:03.233Z",
+  "generatedAt": "2026-04-29T02:33:46.487Z",
   "collections": [
     {
       "name": "users",
@@ -292,6 +292,36 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "manual_created_at",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "issuance_fee",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cet_monthly",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "cet_yearly",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_iof",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -367,6 +397,18 @@
         },
         {
           "name": "mora_interest",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "penalty_amount",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "mora_interest_amount",
           "type": "number",
           "required": false,
           "system": false

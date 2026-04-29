@@ -46,13 +46,29 @@ export default function Onboarding() {
     const inst = Number(formData.installments)
     const r = 0.02 // 2% fixed base rate mock
     const iof = amt * 0.03 // 3% IOF Mock
-    const total = amt + iof
-    const pmt =
-      formData.calcType === 'Price'
-        ? (total * r * Math.pow(1 + r, inst)) / (Math.pow(1 + r, inst) - 1)
-        : total / inst + total * r
+    const issuance_fee = amt * 0.01 // 1% fee mock
+    const total = amt + iof + issuance_fee
 
-    setSimRes({ iof, total, pmt, cet: 32.5 })
+    let pmt = 0
+    if (formData.calcType === 'Price') {
+      pmt = (total * r * Math.pow(1 + r, inst)) / (Math.pow(1 + r, inst) - 1)
+    } else {
+      pmt = total / inst + total * r // SAC first installment
+    }
+
+    // Approximate CET calculation
+    const cet_monthly = 2.5
+    const cet_yearly = Math.pow(1 + cet_monthly / 100, 12) * 100 - 100
+
+    setSimRes({
+      iof,
+      issuance_fee,
+      total,
+      pmt,
+      cet: cet_yearly.toFixed(2),
+      cet_monthly,
+      cet_yearly,
+    })
     setStep(3)
   }
 
@@ -95,12 +111,52 @@ export default function Onboarding() {
         calculation_type: formData.calcType,
         status: 'Aguardando Documentos',
         operation_date: new Date().toISOString(),
+        manual_created_at: new Date().toISOString(),
         score: mockScore,
         iof: simRes?.iof || 0,
-        cet: simRes?.cet || 0,
+        total_iof: simRes?.iof || 0,
+        issuance_fee: simRes?.issuance_fee || 0,
+        cet_monthly: simRes?.cet_monthly || 0,
+        cet_yearly: simRes?.cet_yearly || 0,
+        cet: simRes?.cet_yearly || 0,
         signature_hash: crypto.randomUUID(),
         purpose: formData.purpose,
       })
+
+      // Generate Installments
+      let balance = simRes?.total || Number(formData.amount)
+      const instCount = Number(formData.installments)
+      const r = 0.02
+      const amort_sac = balance / instCount
+      const date = new Date()
+
+      for (let i = 1; i <= instCount; i++) {
+        date.setMonth(date.getMonth() + 1)
+        let interest = balance * r
+        let principal = 0
+        let currentPmt = 0
+
+        if (formData.calcType === 'Price') {
+          currentPmt = simRes?.pmt || 0
+          principal = currentPmt - interest
+        } else {
+          principal = amort_sac
+          currentPmt = principal + interest
+        }
+        balance -= principal
+
+        await api.installments.create({
+          proposal_id: proposal.id,
+          number: i,
+          due_date: date.toISOString(),
+          amount: currentPmt,
+          status: 'Pendente',
+          principal_amount: principal,
+          interest_amount: interest,
+          mora_interest_amount: 0,
+          penalty_amount: 0,
+        })
+      }
 
       toast({ title: 'Sucesso!', description: 'Proposta assinada digitalmente e submetida.' })
       navigate('/customer/dashboard')
@@ -267,7 +323,10 @@ export default function Onboarding() {
                       IOF Retido: <strong>R$ {simRes.iof.toFixed(2)}</strong>
                     </p>
                     <p>
-                      Valor Financiado: <strong>R$ {simRes.total.toFixed(2)}</strong>
+                      Tarifa Emissão: <strong>R$ {simRes.issuance_fee.toFixed(2)}</strong>
+                    </p>
+                    <p>
+                      Total Financiado: <strong>R$ {simRes.total.toFixed(2)}</strong>
                     </p>
                     <p>
                       Custo Efetivo Total (CET): <strong>{simRes.cet}% a.a.</strong>

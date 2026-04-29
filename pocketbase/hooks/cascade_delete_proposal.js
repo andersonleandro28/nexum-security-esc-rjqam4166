@@ -13,5 +13,15 @@ onRecordAfterDeleteSuccess((e) => {
     for (const bol of boletos) $app.delete(bol)
   } catch (err) {}
 
+  try {
+    const clientId = e.record.get('client_id')
+    if (clientId) {
+      const docs = $app.findRecordsByFilter('kyc_documents', 'client_id = {:id}', '', 0, 0, {
+        id: clientId,
+      })
+      for (const doc of docs) $app.delete(doc)
+    }
+  } catch (err) {}
+
   e.next()
 }, 'proposals')
