@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/services/api'
 import useRealtime from '@/hooks/use-realtime'
 import { useToast } from '@/hooks/use-toast'
@@ -37,6 +38,7 @@ export default function AdminProposals() {
   const [proposals, setProposals] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [selected, setSelected] = useState<any>(null)
+  const [proposalInstallments, setProposalInstallments] = useState<any[]>([])
   const [editOpen, setEditOpen] = useState(false)
   const [boletoOpen, setBoletoOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -47,6 +49,8 @@ export default function AdminProposals() {
     client_id: '',
     amount: '',
     installments: '',
+    interest_rate: '',
+    calculation_type: 'Price',
     issuance_fee: '',
     iof: '',
     manual_created_at: '',
@@ -95,12 +99,16 @@ export default function AdminProposals() {
   const handleCreateLegacy = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      const amount = Number(createForm.amount)
+      const installments = Number(createForm.installments)
+      const interestRate = Number(createForm.interest_rate) / 100
+
       const payload = {
         client_id: createForm.client_id,
-        amount: Number(createForm.amount),
-        installments: Number(createForm.installments),
-        interest_rate: 2.0,
-        calculation_type: 'Price',
+        amount,
+        installments,
+        interest_rate: Number(createForm.interest_rate),
+        calculation_type: createForm.calculation_type,
         status: createForm.status,
         operation_date: createForm.manual_created_at
           ? createForm.manual_created_at + 'T12:00:00.000Z'
@@ -125,20 +133,49 @@ export default function AdminProposals() {
 
       const p = await api.proposals.create(payload)
 
-      let bal = Number(createForm.amount)
-      const pmt = bal / Number(createForm.installments)
       const date = new Date(createForm.manual_created_at || new Date())
-      for (let i = 1; i <= Number(createForm.installments); i++) {
-        date.setMonth(date.getMonth() + 1)
-        await api.installments.create({
-          proposal_id: p.id,
-          number: i,
-          due_date: date.toISOString(),
-          amount: pmt,
-          status: createForm.status === 'Liquidado' ? 'Pago' : 'Pendente',
-          principal_amount: pmt * 0.8,
-          interest_amount: pmt * 0.2,
-        })
+
+      if (createForm.calculation_type === 'Price') {
+        let pmt = amount / installments
+        if (interestRate > 0) {
+          pmt =
+            (amount * (interestRate * Math.pow(1 + interestRate, installments))) /
+            (Math.pow(1 + interestRate, installments) - 1)
+        }
+        let balance = amount
+        for (let i = 1; i <= installments; i++) {
+          date.setMonth(date.getMonth() + 1)
+          const interest = balance * interestRate
+          const principal = pmt - interest
+          balance -= principal
+          await api.installments.create({
+            proposal_id: p.id,
+            number: i,
+            due_date: date.toISOString(),
+            amount: pmt,
+            status: createForm.status === 'Liquidado' ? 'Pago' : 'Pendente',
+            principal_amount: principal,
+            interest_amount: interest,
+          })
+        }
+      } else if (createForm.calculation_type === 'SAC') {
+        const principal = amount / installments
+        let balance = amount
+        for (let i = 1; i <= installments; i++) {
+          date.setMonth(date.getMonth() + 1)
+          const interest = balance * interestRate
+          const pmt = principal + interest
+          balance -= principal
+          await api.installments.create({
+            proposal_id: p.id,
+            number: i,
+            due_date: date.toISOString(),
+            amount: pmt,
+            status: createForm.status === 'Liquidado' ? 'Pago' : 'Pendente',
+            principal_amount: principal,
+            interest_amount: interest,
+          })
+        }
       }
 
       await api.audit.create('Criação Legado', `CCB ${p.id} inserida manualmente.`)
@@ -154,7 +191,7 @@ export default function AdminProposals() {
     try {
       const partners = await api.partners.listByClient(p.expand?.client_id?.id || p.client_id)
       const partnersText = partners.map((pt: any) => `${pt.name} (CPF: ${pt.cpf})`).join(', ')
-      const text = `CÉDULA DE CRÉDITO BANCÁRIO (CCB)\n\nTomador: ${p.expand?.client_id?.name}\nCNPJ/CPF: ${p.expand?.client_id?.document}\nSócios Solidários: ${partnersText || 'N/A'}\n\nDETALHAMENTO FINANCEIRO:\nValor Principal: R$ ${p.amount}\nParcelas: ${p.installments}\nTaxa de Juros: ${p.interest_rate}%\nIOF: R$ ${p.iof || 0}\nCET (Mensal): ${p.cet_monthly || 0}%\nCET (Anual): ${p.cet_yearly || 0}%\n\nSACADO / BENEFICIÁRIO:\nNome: ${p.drawee_name || 'N/A'}\nCPF/CNPJ: ${p.drawee_cpf || 'N/A'}\n\nEmissão: ${new Date().toISOString()}\nHash Assinatura: ${crypto.randomUUID()}`
+      const text = `CÉDULA DE CRÉDITO BANCÁRIO (CCB)\n\nTomador: ${p.expand?.client_id?.name}\nCNPJ/CPF: ${p.expand?.client_id?.document}\nSócios Solidários: ${partnersText || 'N/A'}\n\nDETALHAMENTO FINANCEIRO:\nValor Principal: R$ ${p.amount}\nParcelas: ${p.installments}\nTaxa de Juros: ${p.interest_rate}%\nSistema de Amortização: ${p.calculation_type}\nIOF: R$ ${p.iof || 0}\nCET (Mensal): ${p.cet_monthly || 0}%\nCET (Anual): ${p.cet_yearly || 0}%\n\nSACADO / BENEFICIÁRIO:\nNome: ${p.drawee_name || 'N/A'}\nCPF/CNPJ: ${p.drawee_cpf || 'N/A'}\n\nEmissão: ${new Date().toISOString()}\nHash Assinatura: ${crypto.randomUUID()}`
 
       const blob = new Blob([text], { type: 'application/pdf' })
       const fd = new FormData()
@@ -263,8 +300,10 @@ export default function AdminProposals() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
+                        onClick={async () => {
                           setSelected(p)
+                          const insts = await api.installments.listByProposal(p.id)
+                          setProposalInstallments(insts)
                           setDetailsOpen(true)
                         }}
                       >
@@ -357,68 +396,78 @@ export default function AdminProposals() {
 
       {/* Details Modal */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Visão 360 - Operação</DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh] pr-4">
-            <div className="space-y-6">
+          <Tabs defaultValue="resumo" className="flex-1 overflow-hidden flex flex-col">
+            <TabsList>
+              <TabsTrigger value="resumo">Resumo</TabsTrigger>
+              <TabsTrigger value="sacado">Sacado</TabsTrigger>
+              <TabsTrigger value="parcelas">Parcelas</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="resumo" className="flex-1 overflow-auto mt-4 pr-4">
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <Label className="text-slate-500">Tomador</Label>
+                    <p className="font-semibold">{selected?.expand?.client_id?.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">CNPJ</Label>
+                    <p className="font-semibold">{selected?.expand?.client_id?.document}</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">Status</Label>
+                    <p className="font-semibold">{selected?.status}</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">Finalidade</Label>
+                    <p className="font-semibold">{selected?.purpose || 'N/A'}</p>
+                  </div>
+                </div>
+                <div className="border-t pt-4 grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <Label className="text-slate-500">Principal</Label>
+                    <p className="font-semibold">{formatCurrency(selected?.amount)}</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">Parcelas</Label>
+                    <p className="font-semibold">
+                      {selected?.installments}x ({selected?.calculation_type})
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">Taxa Juros</Label>
+                    <p className="font-semibold">{selected?.interest_rate}% a.m.</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">IOF</Label>
+                    <p className="font-semibold">{formatCurrency(selected?.iof)}</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">CET (Mensal)</Label>
+                    <p className="font-semibold">{selected?.cet_monthly || 0}%</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">CET (Anual)</Label>
+                    <p className="font-semibold">{selected?.cet_yearly || 0}%</p>
+                  </div>
+                  <div>
+                    <Label className="text-slate-500">Carência</Label>
+                    <p className="font-semibold">
+                      {selected?.grace_period_date
+                        ? new Date(selected.grace_period_date).toLocaleDateString('pt-BR')
+                        : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="sacado" className="flex-1 overflow-auto mt-4 pr-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <Label className="text-slate-500">Tomador</Label>
-                  <p className="font-semibold">{selected?.expand?.client_id?.name}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">CNPJ</Label>
-                  <p className="font-semibold">{selected?.expand?.client_id?.document}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">Status</Label>
-                  <p className="font-semibold">{selected?.status}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">Finalidade</Label>
-                  <p className="font-semibold">{selected?.purpose || 'N/A'}</p>
-                </div>
-              </div>
-              <div className="border-t pt-4 grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <Label className="text-slate-500">Principal</Label>
-                  <p className="font-semibold">{formatCurrency(selected?.amount)}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">Parcelas</Label>
-                  <p className="font-semibold">{selected?.installments}x</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">Taxa Juros</Label>
-                  <p className="font-semibold">{selected?.interest_rate}%</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">IOF</Label>
-                  <p className="font-semibold">{formatCurrency(selected?.iof)}</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">CET (Mensal)</Label>
-                  <p className="font-semibold">{selected?.cet_monthly || 0}%</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">CET (Anual)</Label>
-                  <p className="font-semibold">{selected?.cet_yearly || 0}%</p>
-                </div>
-                <div>
-                  <Label className="text-slate-500">Carência</Label>
-                  <p className="font-semibold">
-                    {selected?.grace_period_date
-                      ? new Date(selected.grace_period_date).toLocaleDateString('pt-BR')
-                      : 'N/A'}
-                  </p>
-                </div>
-              </div>
-              <div className="border-t pt-4 grid grid-cols-2 gap-4 text-sm">
-                <div className="col-span-2 font-semibold text-slate-800">
-                  Dados do Sacado (Beneficiário)
-                </div>
                 <div>
                   <Label className="text-slate-500">Nome</Label>
                   <p className="font-semibold">{selected?.drawee_name || 'N/A'}</p>
@@ -436,8 +485,47 @@ export default function AdminProposals() {
                   <p className="font-semibold">{selected?.drawee_phone || 'N/A'}</p>
                 </div>
               </div>
-            </div>
-          </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="parcelas" className="flex-1 overflow-auto mt-4 pr-4">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nº</TableHead>
+                    <TableHead>Vencimento</TableHead>
+                    <TableHead>Valor</TableHead>
+                    <TableHead>Principal</TableHead>
+                    <TableHead>Juros</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {proposalInstallments.map((inst) => (
+                    <TableRow key={inst.id}>
+                      <TableCell>{inst.number}</TableCell>
+                      <TableCell>{new Date(inst.due_date).toLocaleDateString('pt-BR')}</TableCell>
+                      <TableCell>{formatCurrency(inst.amount)}</TableCell>
+                      <TableCell>{formatCurrency(inst.principal_amount)}</TableCell>
+                      <TableCell>{formatCurrency(inst.interest_amount)}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            inst.status === 'Pago'
+                              ? 'default'
+                              : inst.status === 'Atrasado'
+                                ? 'destructive'
+                                : 'secondary'
+                          }
+                        >
+                          {inst.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
 
@@ -515,7 +603,36 @@ export default function AdminProposals() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Taxa (R$)</Label>
+                  <Label>Taxa (% a.m.)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={createForm.interest_rate}
+                    onChange={(e) =>
+                      setCreateForm({ ...createForm, interest_rate: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Amortização</Label>
+                  <Select
+                    value={createForm.calculation_type}
+                    onValueChange={(v) => setCreateForm({ ...createForm, calculation_type: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Price">Price</SelectItem>
+                      <SelectItem value="SAC">SAC</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="space-y-2">
+                  <Label>Taxa Emissão (R$)</Label>
                   <Input
                     type="number"
                     value={createForm.issuance_fee}
@@ -571,6 +688,13 @@ export default function AdminProposals() {
                     }
                   />
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Finalidade do Crédito</Label>
+                <Input
+                  value={createForm.purpose}
+                  onChange={(e) => setCreateForm({ ...createForm, purpose: e.target.value })}
+                />
               </div>
               <h4 className="font-semibold text-slate-800 pt-2 border-t">
                 Dados do Sacado (Opcional)

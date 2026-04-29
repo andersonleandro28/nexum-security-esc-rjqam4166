@@ -195,6 +195,14 @@ export default function Onboarding() {
                 />
               </div>
               <div className="space-y-2">
+                <Label>Telefone</Label>
+                <Input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>E-mail (Portal)</Label>
                 <Input
                   type="email"
