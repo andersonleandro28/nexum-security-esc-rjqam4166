@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/services/api'
 import pb from '@/lib/pocketbase/client'
 import useRealtime from '@/hooks/use-realtime'
-import { Download, Clock, TrendingUp } from 'lucide-react'
+import { Download, Clock, TrendingUp, FileText } from 'lucide-react'
 
 export default function CustomerDashboard() {
   const { user } = useAuth()
@@ -100,12 +100,24 @@ export default function CustomerDashboard() {
               </p>
             </div>
           </div>
-          <Badge
-            variant="outline"
-            className="border-amber-300 text-amber-700 bg-white px-4 py-1.5 font-bold shadow-sm text-sm"
-          >
-            Status: {active.status}
-          </Badge>
+          <div className="flex flex-col items-end gap-2">
+            <Badge
+              variant="outline"
+              className="border-amber-300 text-amber-700 bg-white px-4 py-1.5 font-bold shadow-sm text-sm"
+            >
+              Status: {active.status}
+            </Badge>
+            {active.ccb_file && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-amber-300 text-amber-800 hover:bg-amber-100"
+                onClick={() => window.open(pb.files.getURL(active, active.ccb_file), '_blank')}
+              >
+                <FileText className="w-4 h-4 mr-2" /> Download CCB
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 

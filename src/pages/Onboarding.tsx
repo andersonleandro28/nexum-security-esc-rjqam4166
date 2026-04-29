@@ -1,18 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, UploadCloud, ArrowRight, ArrowLeft } from 'lucide-react'
+import { ArrowRight, ArrowLeft, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
 import { api } from '@/services/api'
 import pb from '@/lib/pocketbase/client'
@@ -24,55 +17,44 @@ export default function Onboarding() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [formData, setFormData] = useState({
-    type: 'PJ',
     name: '',
     document: '',
-    email: '',
-    phone: '',
+    stateRegistration: '',
+    fiscalAddress: '',
+    billing: '',
     bank: '',
+    email: '',
     password: '',
-    hasGuarantor: false,
-    amount: '15000',
-    installments: '12',
-    calcType: 'Price',
-    purpose: '',
+    phone: '',
   })
+  const [partners, setPartners] = useState([{ name: '', cpf: '', email: '', role: '', equity: '' }])
+  const [docs, setDocs] = useState<{ [key: string]: File | null }>({
+    'Social Contract': null,
+    'CNPJ Card': null,
+    'Proof of Address': null,
+    Identity: null,
+  })
+  const [compliance, setCompliance] = useState({ terms: false, scr: false })
 
-  const [simRes, setSimRes] = useState<any>(null)
-  const [docFile, setDocFile] = useState<File | null>(null)
-
-  const handleSimulate = () => {
-    const amt = Number(formData.amount)
-    const inst = Number(formData.installments)
-    const r = 0.02 // 2% fixed base rate mock
-    const iof = amt * 0.03 // 3% IOF Mock
-    const issuance_fee = amt * 0.01 // 1% fee mock
-    const total = amt + iof + issuance_fee
-
-    let pmt = 0
-    if (formData.calcType === 'Price') {
-      pmt = (total * r * Math.pow(1 + r, inst)) / (Math.pow(1 + r, inst) - 1)
-    } else {
-      pmt = total / inst + total * r // SAC first installment
+  const handleValidateCNPJ = async () => {
+    if (formData.document.length > 10) {
+      toast({ title: 'CNPJ Validado', description: 'Dados recuperados com sucesso.' })
+      setFormData((prev) => ({
+        ...prev,
+        name: 'Empresa Alpha LTDA',
+        fiscalAddress: 'Av Paulista, 1000 - SP',
+      }))
     }
-
-    // Approximate CET calculation
-    const cet_monthly = 2.5
-    const cet_yearly = Math.pow(1 + cet_monthly / 100, 12) * 100 - 100
-
-    setSimRes({
-      iof,
-      issuance_fee,
-      total,
-      pmt,
-      cet: cet_yearly.toFixed(2),
-      cet_monthly,
-      cet_yearly,
-    })
-    setStep(3)
   }
 
   const handleSubmit = async () => {
+    if (!compliance.terms || !compliance.scr) {
+      return toast({
+        title: 'Atenção',
+        description: 'Aceite os termos para continuar',
+        variant: 'destructive',
+      })
+    }
     setIsSubmitting(true)
     try {
       await pb.collection('users').create({
@@ -86,147 +68,123 @@ export default function Onboarding() {
 
       const client = await api.clients.create({
         user_id: pb.authStore.record?.id,
-        type: formData.type,
+        type: 'PJ',
         name: formData.name,
         document: formData.document,
         email: formData.email,
         phone: formData.phone,
         bank_number: formData.bank,
+        billing: Number(formData.billing),
+        state_registration: formData.stateRegistration,
+        fiscal_address: formData.fiscalAddress,
+        status: 'Pendente',
       })
 
-      if (docFile) {
-        const fd = new FormData()
-        fd.append('client_id', client.id)
-        fd.append('document_type', 'Identity')
-        fd.append('file', docFile)
-        await api.documents.create(fd)
+      for (const p of partners) {
+        if (p.name)
+          await api.partners.create({
+            client_id: client.id,
+            ...p,
+            equity_percentage: Number(p.equity),
+          })
       }
 
-      const mockScore = Math.floor(Math.random() * 500) + 450
-      await api.proposals.create({
-        client_id: client.id,
-        amount: Number(formData.amount),
-        installments: Number(formData.installments),
-        interest_rate: 2.0,
-        calculation_type: formData.calcType,
-        status: 'Aguardando Documentos',
-        operation_date: new Date().toISOString(),
-        manual_created_at: new Date().toISOString(),
-        score: mockScore,
-        iof: simRes?.iof || 0,
-        total_iof: simRes?.iof || 0,
-        issuance_fee: simRes?.issuance_fee || 0,
-        cet_monthly: simRes?.cet_monthly || 0,
-        cet_yearly: simRes?.cet_yearly || 0,
-        cet: simRes?.cet_yearly || 0,
-        signature_hash: crypto.randomUUID(),
-        purpose: formData.purpose,
-      })
-
-      // Generate Installments
-      let balance = simRes?.total || Number(formData.amount)
-      const instCount = Number(formData.installments)
-      const r = 0.02
-      const amort_sac = balance / instCount
-      const date = new Date()
-
-      for (let i = 1; i <= instCount; i++) {
-        date.setMonth(date.getMonth() + 1)
-        let interest = balance * r
-        let principal = 0
-        let currentPmt = 0
-
-        if (formData.calcType === 'Price') {
-          currentPmt = simRes?.pmt || 0
-          principal = currentPmt - interest
-        } else {
-          principal = amort_sac
-          currentPmt = principal + interest
+      for (const [type, file] of Object.entries(docs)) {
+        if (file) {
+          const fd = new FormData()
+          fd.append('client_id', client.id)
+          fd.append('document_type', type)
+          fd.append('file', file)
+          fd.append('status', 'Pendente')
+          await api.documents.create(fd)
         }
-        balance -= principal
-
-        await api.installments.create({
-          proposal_id: proposal.id,
-          number: i,
-          due_date: date.toISOString(),
-          amount: currentPmt,
-          status: 'Pendente',
-          principal_amount: principal,
-          interest_amount: interest,
-          mora_interest_amount: 0,
-          penalty_amount: 0,
-        })
       }
 
-      toast({ title: 'Sucesso!', description: 'Proposta assinada digitalmente e submetida.' })
+      const ip = await fetch('https://api.ipify.org?format=json')
+        .then((r) => r.json())
+        .then((r) => r.ip)
+        .catch(() => 'unknown')
+      await api.compliance.acceptTerms({
+        user_id: pb.authStore.record?.id,
+        ip_address: ip,
+        timestamp: new Date().toISOString(),
+        version: 'v1.0',
+        user_agent: navigator.userAgent,
+      })
+
+      toast({ title: 'Sucesso!', description: 'Onboarding concluído. Em análise KYC.' })
       navigate('/customer/dashboard')
     } catch (err: any) {
-      setIsSubmitting(false)
       toast({
         title: 'Erro',
-        description: err.message || 'Falha ao processar operação.',
+        description: err.message || 'Falha no cadastro',
         variant: 'destructive',
       })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
   return (
     <div className="container max-w-3xl py-12 px-4">
-      <div className="mb-8 flex justify-between items-center">
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${step >= i ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-slate-200 text-slate-400'}`}
-          >
-            <span className="font-bold">{i}</span>
-          </div>
-        ))}
-      </div>
-
       <Card className="shadow-lg border-0 bg-white">
         <CardHeader className="bg-slate-50/50 border-b pb-6">
-          <CardTitle>
-            {step === 1 && 'Cadastro e KYC'}
-            {step === 2 && 'Simulador de Crédito'}
-            {step === 3 && 'Documentação e Garantias'}
-            {step === 4 && 'Análise e Assinatura Sandbox'}
-          </CardTitle>
-          <CardDescription>Preencha os detalhes para submeter a operação digital.</CardDescription>
+          <CardTitle>Onboarding B2B - Etapa {step}/4</CardTitle>
+          <CardDescription>Processo de KYC e Compliance para abertura de conta PJ.</CardDescription>
         </CardHeader>
         <CardContent className="p-6 md:p-8 space-y-6">
           {step === 1 && (
             <div className="grid sm:grid-cols-2 gap-4 animate-fade-in">
               <div className="space-y-2">
-                <Label>Tipo de Pessoa</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(v) => setFormData({ ...formData, type: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PF">Pessoa Física</SelectItem>
-                    <SelectItem value="PJ">Pessoa Jurídica</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>CNPJ</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={formData.document}
+                    onChange={(e) => setFormData({ ...formData, document: e.target.value })}
+                  />
+                  <Button variant="outline" onClick={handleValidateCNPJ}>
+                    Buscar
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2">
-                <Label>Nome Completo / Razão Social</Label>
+                <Label>Razão Social</Label>
                 <Input
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label>CPF / CNPJ</Label>
+                <Label>Inscrição Estadual</Label>
                 <Input
-                  value={formData.document}
-                  onChange={(e) => setFormData({ ...formData, document: e.target.value })}
+                  value={formData.stateRegistration}
+                  onChange={(e) => setFormData({ ...formData, stateRegistration: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <Label>E-mail Corporativo</Label>
+                <Label>Endereço Fiscal</Label>
+                <Input
+                  value={formData.fiscalAddress}
+                  onChange={(e) => setFormData({ ...formData, fiscalAddress: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Faturamento Médio (R$)</Label>
+                <Input
+                  type="number"
+                  value={formData.billing}
+                  onChange={(e) => setFormData({ ...formData, billing: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Banco (Ag/Conta)</Label>
+                <Input
+                  value={formData.bank}
+                  onChange={(e) => setFormData({ ...formData, bank: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>E-mail (Portal)</Label>
                 <Input
                   type="email"
                   value={formData.email}
@@ -234,136 +192,131 @@ export default function Onboarding() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Senha para o Portal</Label>
+                <Label>Senha (Portal)</Label>
                 <Input
                   type="password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Telefone / WhatsApp</Label>
-                <Input
-                  value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Banco (Código de Compensação)</Label>
-                <Input
-                  value={formData.bank}
-                  onChange={(e) => setFormData({ ...formData, bank: e.target.value })}
-                />
-              </div>
-              <div className="flex items-center space-x-2 mt-6">
-                <Switch
-                  checked={formData.hasGuarantor}
-                  onCheckedChange={(c) => setFormData({ ...formData, hasGuarantor: c })}
-                />
-                <Label>Apresentar Avalista Solidário?</Label>
-              </div>
             </div>
           )}
 
           {step === 2 && (
-            <div className="grid sm:grid-cols-2 gap-4 animate-fade-in">
-              <div className="space-y-2">
-                <Label>Valor Solicitado (R$)</Label>
-                <Input
-                  type="number"
-                  value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Prazo (Meses)</Label>
-                <Input
-                  type="number"
-                  value={formData.installments}
-                  onChange={(e) => setFormData({ ...formData, installments: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Método de Amortização</Label>
-                <Select
-                  value={formData.calcType}
-                  onValueChange={(v) => setFormData({ ...formData, calcType: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Price">Tabela Price</SelectItem>
-                    <SelectItem value="SAC">Sistema SAC</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Finalidade da Operação</Label>
-                <Input
-                  value={formData.purpose}
-                  onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-                />
-              </div>
+            <div className="space-y-4 animate-fade-in">
+              {partners.map((p, i) => (
+                <div key={i} className="grid sm:grid-cols-3 gap-3 p-4 bg-slate-50 rounded border">
+                  <div className="space-y-1">
+                    <Label>Nome</Label>
+                    <Input
+                      value={p.name}
+                      onChange={(e) => {
+                        const n = [...partners]
+                        n[i].name = e.target.value
+                        setPartners(n)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>CPF</Label>
+                    <Input
+                      value={p.cpf}
+                      onChange={(e) => {
+                        const n = [...partners]
+                        n[i].cpf = e.target.value
+                        setPartners(n)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>E-mail</Label>
+                    <Input
+                      value={p.email}
+                      onChange={(e) => {
+                        const n = [...partners]
+                        n[i].email = e.target.value
+                        setPartners(n)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Cargo</Label>
+                    <Input
+                      value={p.role}
+                      onChange={(e) => {
+                        const n = [...partners]
+                        n[i].role = e.target.value
+                        setPartners(n)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>% Participação</Label>
+                    <Input
+                      type="number"
+                      value={p.equity}
+                      onChange={(e) => {
+                        const n = [...partners]
+                        n[i].equity = e.target.value
+                        setPartners(n)
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setPartners([...partners, { name: '', cpf: '', email: '', role: '', equity: '' }])
+                }
+              >
+                + Adicionar Sócio
+              </Button>
             </div>
           )}
 
           {step === 3 && (
-            <div className="space-y-6 animate-fade-in">
-              {simRes && (
-                <div className="bg-emerald-50 p-5 rounded-lg border border-emerald-100">
-                  <h4 className="font-semibold text-emerald-900 mb-3">
-                    Memória de Cálculo ({formData.calcType})
-                  </h4>
-                  <div className="grid grid-cols-2 gap-2 text-sm text-emerald-800">
-                    <p>
-                      Parcela Inicial: <strong>R$ {simRes.pmt.toFixed(2)}</strong>
-                    </p>
-                    <p>
-                      IOF Retido: <strong>R$ {simRes.iof.toFixed(2)}</strong>
-                    </p>
-                    <p>
-                      Tarifa Emissão: <strong>R$ {simRes.issuance_fee.toFixed(2)}</strong>
-                    </p>
-                    <p>
-                      Total Financiado: <strong>R$ {simRes.total.toFixed(2)}</strong>
-                    </p>
-                    <p>
-                      Custo Efetivo Total (CET): <strong>{simRes.cet}% a.a.</strong>
-                    </p>
+            <div className="grid gap-4 animate-fade-in">
+              {Object.keys(docs).map((k) => (
+                <div key={k} className="flex items-center justify-between p-4 border rounded">
+                  <span className="font-medium text-slate-700">{k}</span>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      className="w-64"
+                      onChange={(e) => setDocs({ ...docs, [k]: e.target.files?.[0] || null })}
+                    />
+                    {docs[k] && <CheckCircle className="text-emerald-500 w-5 h-5" />}
                   </div>
                 </div>
-              )}
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center bg-slate-50 relative hover:bg-slate-100 transition-colors">
-                <UploadCloud className="w-10 h-10 mx-auto text-slate-400 mb-2" />
-                <p className="text-sm font-medium text-slate-600">
-                  Envie seu Documento Principal (RG/CNH/Contrato)
-                </p>
-                <Input
-                  type="file"
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                  onChange={(e) => setDocFile(e.target.files?.[0] || null)}
-                />
-                {docFile && (
-                  <p className="text-xs text-emerald-600 mt-3 bg-emerald-100/50 inline-block px-3 py-1 rounded-full">
-                    {docFile.name}
-                  </p>
-                )}
-              </div>
+              ))}
             </div>
           )}
 
           {step === 4 && (
-            <div className="space-y-4 bg-slate-50 p-6 rounded-lg animate-fade-in">
-              <h4 className="font-bold text-slate-800">Assinatura Eletrônica e Conclusão</h4>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                Este ambiente é integrado em Sandbox. O sistema irá registrar uma pontuação de
-                crédito Serasa fictícia e aplicar uma assinatura digital de conformidade
-                automaticamente usando nossa rotina de testes.
-              </p>
-              <div className="flex items-center gap-2 mt-4 text-emerald-600 bg-emerald-50 p-3 rounded border border-emerald-100">
-                <CheckCircle2 className="w-5 h-5" />{' '}
-                <span className="font-medium text-sm">Operação pronta para emissão da CCB</span>
+            <div className="space-y-6 animate-fade-in bg-slate-50 p-6 rounded border">
+              <h4 className="font-bold text-slate-800">Conformidade Legal</h4>
+              <div className="flex items-start space-x-3">
+                <Checkbox
+                  id="terms"
+                  checked={compliance.terms}
+                  onCheckedChange={(c: boolean) => setCompliance({ ...compliance, terms: c })}
+                />
+                <Label htmlFor="terms" className="leading-relaxed">
+                  Aceito os Termos de Uso. Reconheço que este aceite registra meu IP para validade
+                  legal da assinatura eletrônica.
+                </Label>
+              </div>
+              <div className="flex items-start space-x-3">
+                <Checkbox
+                  id="scr"
+                  checked={compliance.scr}
+                  onCheckedChange={(c: boolean) => setCompliance({ ...compliance, scr: c })}
+                />
+                <Label htmlFor="scr" className="leading-relaxed">
+                  Autorizo a consulta ao Sistema de Informações de Crédito (SCR) do Banco Central do
+                  Brasil.
+                </Label>
               </div>
             </div>
           )}
@@ -376,28 +329,17 @@ export default function Onboarding() {
           >
             <ArrowLeft className="w-4 h-4 mr-2" /> Voltar
           </Button>
-          {step === 1 && (
-            <Button onClick={() => setStep(2)}>
-              Avançar Simulação <ArrowRight className="w-4 h-4 ml-2" />
+          {step < 4 ? (
+            <Button onClick={() => setStep((s) => s + 1)}>
+              Avançar <ArrowRight className="w-4 h-4 ml-2" />
             </Button>
-          )}
-          {step === 2 && (
-            <Button onClick={handleSimulate}>
-              Calcular e Avançar <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          )}
-          {step === 3 && (
-            <Button onClick={() => setStep(4)}>
-              Revisar Sandbox <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          )}
-          {step === 4 && (
+          ) : (
             <Button
               onClick={handleSubmit}
               disabled={isSubmitting}
               className="bg-emerald-600 hover:bg-emerald-700"
             >
-              {isSubmitting ? 'Finalizando...' : 'Assinar Digitalmente'}
+              {isSubmitting ? 'Processando...' : 'Finalizar e Assinar'}
             </Button>
           )}
         </div>

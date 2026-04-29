@@ -11,6 +11,7 @@ import CustomerDashboard from './pages/customer/Dashboard'
 import AdminDashboard from './pages/admin/Dashboard'
 import AdminProposals from './pages/admin/Proposals'
 import AdminReports from './pages/admin/Reports'
+import AdminClients from './pages/admin/Clients'
 import { PublicLayout } from './components/PublicLayout'
 import { CustomerLayout } from './components/CustomerLayout'
 import { AdminLayout } from './components/AdminLayout'
@@ -50,6 +51,7 @@ const App = () => (
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="proposals" element={<AdminProposals />} />
                 <Route path="reports" element={<AdminReports />} />
+                <Route path="clients" element={<AdminClients />} />
               </Route>
             </Route>
 

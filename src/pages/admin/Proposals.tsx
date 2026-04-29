@@ -29,7 +29,7 @@ import {
 import { api } from '@/services/api'
 import useRealtime from '@/hooks/use-realtime'
 import { useToast } from '@/hooks/use-toast'
-import { Edit, UploadCloud } from 'lucide-react'
+import { Edit, UploadCloud, FileText } from 'lucide-react'
 
 import pb from '@/lib/pocketbase/client'
 
@@ -136,6 +136,21 @@ export default function AdminProposals() {
       loadData()
     } catch (err) {
       toast({ title: 'Erro', description: 'Falha ao registrar.', variant: 'destructive' })
+    }
+  }
+
+  const handleGenerateCCB = async (p: any) => {
+    try {
+      const text = `CÉDULA DE CRÉDITO BANCÁRIO (CCB)\n\nTomador: ${p.expand?.client_id?.name}\nCNPJ/CPF: ${p.expand?.client_id?.document}\nValor: R$ ${p.amount}\nParcelas: ${p.installments}\nTaxa: ${p.interest_rate}%\nEmissão: ${new Date().toISOString()}\nHash Assinatura: ${crypto.randomUUID()}`
+      const blob = new Blob([text], { type: 'application/pdf' })
+      const fd = new FormData()
+      fd.append('ccb_file', blob, `ccb_${p.id}.pdf`)
+      await pb.collection('proposals').update(p.id, fd)
+      await api.audit.create('Gerar CCB', `CCB gerada para proposta ${p.id}`)
+      toast({ title: 'Sucesso', description: 'CCB gerada e salva com sucesso.' })
+      loadData()
+    } catch (err) {
+      toast({ title: 'Erro', description: 'Falha ao gerar CCB.', variant: 'destructive' })
     }
   }
 
@@ -255,6 +270,15 @@ export default function AdminProposals() {
                         className="shadow-sm"
                       >
                         <Edit className="w-3.5 h-3.5 mr-1" /> Editar
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleGenerateCCB(p)}
+                        className="bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm"
+                        title="Gerar PDF do Contrato"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> CCB
                       </Button>
                       <Button
                         variant="secondary"
