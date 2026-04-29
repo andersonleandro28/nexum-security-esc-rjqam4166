@@ -93,9 +93,11 @@ export default function Onboarding() {
         installments: Number(formData.installments),
         interest_rate: 2.0,
         calculation_type: formData.calcType,
-        status: 'Assinado',
+        status: 'Aguardando Documentos',
         operation_date: new Date().toISOString(),
         score: mockScore,
+        iof: simRes?.iof || 0,
+        cet: simRes?.cet || 0,
         signature_hash: crypto.randomUUID(),
         purpose: formData.purpose,
       })

@@ -33,9 +33,13 @@ export const api = {
         .collection('boletos')
         .getFullList({ filter: `proposal_id="${proposalId}"`, sort: '-created' }),
   },
+  suppliers: {
+    create: (data: any) => pb.collection('suppliers').create(data),
+    list: () => pb.collection('suppliers').getFullList({ sort: 'name' }),
+  },
   expenses: {
     create: (data: FormData | any) => pb.collection('expenses').create(data),
-    list: () => pb.collection('expenses').getFullList({ sort: '-date' }),
+    list: () => pb.collection('expenses').getFullList({ expand: 'supplier_id', sort: '-date' }),
   },
   documents: {
     create: (data: FormData) => pb.collection('kyc_documents').create(data),
