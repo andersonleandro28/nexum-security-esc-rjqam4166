@@ -1,14 +1,14 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom'
 import { ShieldCheck, LogOut, Home } from 'lucide-react'
-import useMainStore from '@/stores/main'
+import { useAuth } from '@/hooks/use-auth'
 import { Button } from '@/components/ui/button'
 
 export function CustomerLayout() {
-  const { setRole } = useMainStore()
+  const { logout } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = () => {
-    setRole('guest')
+    logout()
     navigate('/')
   }
 

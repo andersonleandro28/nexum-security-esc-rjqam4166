@@ -1,6 +1,6 @@
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { LayoutDashboard, FileText, PieChart, LogOut, ShieldCheck } from 'lucide-react'
-import useMainStore from '@/stores/main'
+import { useAuth } from '@/hooks/use-auth'
 import {
   SidebarProvider,
   Sidebar,
@@ -14,12 +14,12 @@ import {
 import { Button } from '@/components/ui/button'
 
 export function AdminLayout() {
-  const { setRole } = useMainStore()
+  const { logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
   const handleLogout = () => {
-    setRole('guest')
+    logout()
     navigate('/')
   }
 
