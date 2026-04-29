@@ -11,6 +11,8 @@ cronAdd('update_late_installments', '0 0 * * *', () => {
     { todayStr },
   )
 
+  const lateProposals = new Set()
+
   for (const inst of lateInstallments) {
     inst.set('status', 'Atrasado')
 
@@ -25,5 +27,20 @@ cronAdd('update_late_installments', '0 0 * * *', () => {
     inst.set('mora_interest_amount', mora)
 
     $app.saveNoValidate(inst)
+
+    const pid = inst.getString('proposal_id')
+    if (pid) {
+      lateProposals.add(pid)
+    }
+  }
+
+  for (const pid of lateProposals) {
+    try {
+      const p = $app.findRecordById('proposals', pid)
+      if (p.getString('status') !== 'Liquidado') {
+        p.set('status', 'Inadimplente')
+        $app.saveNoValidate(p)
+      }
+    } catch (e) {}
   }
 })

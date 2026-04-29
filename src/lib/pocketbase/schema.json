@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-29T02:43:44.757Z",
+  "generatedAt": "2026-04-29T02:57:49.230Z",
   "collections": [
     {
       "name": "users",
@@ -190,6 +190,12 @@
           "required": false,
           "system": false,
           "selectValues": ["Pendente", "Em Análise", "Aprovado", "Rejeitado"]
+        },
+        {
+          "name": "pix_key",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
@@ -253,7 +259,8 @@
             "Em Análise",
             "Aprovado",
             "Reprovado",
-            "Assinado"
+            "Assinado",
+            "Inadimplente"
           ]
         },
         {
@@ -351,6 +358,36 @@
         {
           "name": "ccb_file",
           "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "grace_period_date",
+          "type": "date",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drawee_name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drawee_cpf",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drawee_email",
+          "type": "email",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "drawee_phone",
+          "type": "text",
           "required": false,
           "system": false
         }

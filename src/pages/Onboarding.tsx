@@ -23,11 +23,14 @@ export default function Onboarding() {
     fiscalAddress: '',
     billing: '',
     bank: '',
+    pixKey: '',
     email: '',
     password: '',
     phone: '',
   })
-  const [partners, setPartners] = useState([{ name: '', cpf: '', email: '', role: '', equity: '' }])
+  const [partners, setPartners] = useState([
+    { name: '', cpf: '', email: '', phone: '', role: '', equity: '' },
+  ])
   const [docs, setDocs] = useState<{ [key: string]: File | null }>({
     'Social Contract': null,
     'CNPJ Card': null,
@@ -74,6 +77,7 @@ export default function Onboarding() {
         email: formData.email,
         phone: formData.phone,
         bank_number: formData.bank,
+        pix_key: formData.pixKey,
         billing: Number(formData.billing),
         state_registration: formData.stateRegistration,
         fiscal_address: formData.fiscalAddress,
@@ -184,6 +188,13 @@ export default function Onboarding() {
                 />
               </div>
               <div className="space-y-2">
+                <Label>Chave Pix</Label>
+                <Input
+                  value={formData.pixKey}
+                  onChange={(e) => setFormData({ ...formData, pixKey: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
                 <Label>E-mail (Portal)</Label>
                 <Input
                   type="email"
@@ -240,6 +251,17 @@ export default function Onboarding() {
                     />
                   </div>
                   <div className="space-y-1">
+                    <Label>Telefone</Label>
+                    <Input
+                      value={p.phone}
+                      onChange={(e) => {
+                        const n = [...partners]
+                        n[i].phone = e.target.value
+                        setPartners(n)
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1">
                     <Label>Cargo</Label>
                     <Input
                       value={p.role}
@@ -267,7 +289,10 @@ export default function Onboarding() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  setPartners([...partners, { name: '', cpf: '', email: '', role: '', equity: '' }])
+                  setPartners([
+                    ...partners,
+                    { name: '', cpf: '', email: '', phone: '', role: '', equity: '' },
+                  ])
                 }
               >
                 + Adicionar Sócio

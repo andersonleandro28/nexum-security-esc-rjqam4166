@@ -159,6 +159,14 @@ export default function AdminClients() {
                     onBlur={(e) => handleUpdateField('billing', e.target.value)}
                   />
                 </div>
+                <div className="space-y-1">
+                  <Label>Chave Pix</Label>
+                  <Input
+                    value={selected?.pix_key || ''}
+                    onChange={(e) => setSelected({ ...selected, pix_key: e.target.value })}
+                    onBlur={(e) => handleUpdateField('pix_key', e.target.value)}
+                  />
+                </div>
               </div>
             </TabsContent>
             <TabsContent value="socios" className="pt-4">
@@ -167,6 +175,7 @@ export default function AdminClients() {
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>CPF</TableHead>
+                    <TableHead>Telefone</TableHead>
                     <TableHead>% Part</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -175,6 +184,7 @@ export default function AdminClients() {
                     <TableRow key={p.id}>
                       <TableCell>{p.name}</TableCell>
                       <TableCell>{p.cpf}</TableCell>
+                      <TableCell>{p.phone || '-'}</TableCell>
                       <TableCell>{p.equity_percentage}%</TableCell>
                     </TableRow>
                   ))}
